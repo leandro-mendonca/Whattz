@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whattz E360 — Controle Diário de Energia Elétrica (Maricá / Enel RJ)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Barra Lateral -->
+    <aside class="sidebar">
+      <div class="user-profile">
+        <div class="avatar-circle">⚡</div>
+        <div class="user-info">
+          <strong>Unidade Maricá</strong>
+          <span>Enel Distribuição RJ ▾</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-view="dashboard">
+          <span class="nav-icon">📁</span>
+          <span>Visão Geral &amp; Medidor</span>
+        </button>
+        <button class="nav-item" data-view="grid">
+          <span class="nav-icon">📅</span>
+          <span>Grid Diário do Período</span>
+        </button>
+        <button class="nav-item" data-view="charts">
+          <span class="nav-icon">📊</span>
+          <span>Gráficos &amp; Analytics</span>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <span class="nav-icon">⚙️</span>
+          <span>Tributos &amp; Tarifas</span>
+        </button>
+        <button class="nav-item" data-view="credits">
+          <span class="nav-icon">👨‍💻</span>
+          <span>Sobre &amp; Créditos</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="developer-signature">
+          <span>Autor: <strong>Leandro Mendonça</strong> © 2026</span>
+        </div>
+        <div class="storage-info">
+          <small>Arquivo Local (Sem BD):</small>
+          <code id="storagePathLabel">whattz-data.json</code>
+        </div>
+        <div class="backup-actions">
+          <button id="btnLoadSample" class="btn-sidebar" title="Carregar dados de exemplo de Maricá/RJ">Dados Exemplo</button>
+          <button id="btnExportBackup" class="btn-sidebar" title="Exportar backup JSON">Exportar</button>
+          <button id="btnImportBackup" class="btn-sidebar" title="Importar backup JSON">Importar</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Área Principal -->
+    <main class="main-content">
+      <!-- Cabeçalho Superior -->
+      <header class="brand-topbar">
+        <div class="logo-e360">
+          <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M18 3L6 17H16L13 33L29 16H19L22 3H18Z" stroke="url(#grad1)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="grad1" x1="6" y1="3" x2="29" y2="33" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#0284c7"/>
+                <stop offset="50%" stop-color="#3b6e4c"/>
+                <stop offset="100%" stop-color="#8b3a5e"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span class="logo-title">WHATTZ <small>E360</small></span>
+        </div>
+
+        <div class="header-badges">
+          <span id="periodStatusBadge" class="badge-pill status-open">Ciclo em Andamento</span>
+          <span class="badge-pill">Bandeira: <strong id="topFlagBadge">Verde</strong></span>
+        </div>
+      </header>
+
+      <!-- Barra de Sub-navegação e Filtros de Ciclo -->
+      <div class="subbar-controls">
+        <div class="pill-tabs">
+          <button class="pill-tab active" data-view-jump="dashboard">Painel Principal</button>
+          <button class="pill-tab" data-view-jump="grid">Marcações do Mês</button>
+          <button class="pill-tab" data-view-jump="charts">Curvas &amp; Gráficos (kWh)</button>
+          <button class="pill-tab" data-view-jump="settings">Tarifas &amp; COSIP Maricá</button>
+          <button class="pill-tab" data-view-jump="credits">Créditos</button>
+        </div>
+
+        <div class="site-date-filters">
+          <label for="periodSelect" class="filter-label">Período:</label>
+          <select id="periodSelect" class="e360-select" title="Selecionar Ciclo de Faturamento"></select>
+          <button id="btnNewPeriod" class="btn-outline-pill" title="Novo Ciclo">+ Novo Ciclo</button>
+          <button id="btnEditPeriodMeta" class="btn-outline-pill" title="Configurar Datas e Leitura Inicial">Ajustar Datas</button>
+          <div class="date-box" title="Início do Período">
+            <small>Início:</small> <span id="topStartDate">--/--/----</span>
+          </div>
+          <div class="date-box" title="Dia Previsto do Corte">
+            <small>Corte:</small> <span id="topCutoffDate">--/--/----</span>
+          </div>
+          <div class="date-box" title="Dia do Vencimento">
+            <small>Venc.:</small> <span id="topDueDate">--/--/----</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notificação Toast -->
+      <div id="toastNotification" class="toast hidden"></div>
+
+      <!-- ================================================================= -->
+      <!-- CARDS DE RESUMO DO PERÍODO                                        -->
+      <!-- ================================================================= -->
+      <div class="kpi-row-5">
+        <div class="e360-kpi-card">
+          <div class="e360-kpi-title">⚡ Consumo Acumulado (kWh)</div>
+          <div class="e360-kpi-number" id="kpiAccumulatedKwh">0,00</div>
+          <div class="e360-kpi-sub">Diferença sobre base <strong id="kpiBaseMeter">0,00 kWh</strong></div>
+        </div>
+
+        <div class="e360-kpi-card">
+          <div class="e360-kpi-title">📟 Última Leitura Medidor (kWh)</div>
+          <div class="e360-kpi-number" id="kpiLatestMeter">0,00</div>
+          <div class="e360-kpi-sub">Média: <strong id="kpiAvgDailyKwh">0,00 kWh/dia</strong> (<span id="kpiDaysElapsed">0</span>d)</div>
+        </div>
+
+        <div class="e360-kpi-card">
+          <div class="e360-kpi-title">💵 Gasto até o Momento (R$)</div>
+          <div class="e360-kpi-number text-forest" id="kpiCurrentCostBRL">R$ 0,00</div>
+          <div class="e360-kpi-sub">Tarifa efetiva: <strong id="kpiEffectiveRate">R$ 0,00/kWh</strong></div>
+        </div>
+
+        <div class="e360-kpi-card">
+          <div class="e360-kpi-title">🎯 Estimativa no Corte / Venc.</div>
+          <div class="e360-kpi-number text-burgundy" id="kpiProjectedCostBRL">R$ 0,00</div>
+          <div class="e360-kpi-sub">Projeção: <strong id="kpiProjectedKwh">0,00 kWh</strong></div>
+        </div>
+
+        <div class="e360-kpi-card">
+          <div class="e360-kpi-title">🏛️ Tributos RJ + COSIP Maricá</div>
+          <div class="e360-kpi-number" id="kpiTaxesAndCosipBRL">R$ 0,00</div>
+          <div class="e360-kpi-sub" id="kpiIcmsBandTag">ICMS RJ + PIS/COFINS + COSIP</div>
+        </div>
+      </div>
+
+      <!-- ================================================================= -->
+      <!-- VIEW 1: DASHBOARD PRINCIPAL                                       -->
+      <!-- ================================================================= -->
+      <section id="view-dashboard" class="view-section">
+        <!-- Gráfico Principal de Evolução Diária -->
+        <div class="e360-card main-chart-card">
+          <div class="chart-card-header">
+            <div class="chart-legend-inline">
+              <span class="legend-dot dot-forest"></span> <strong>Consumo Diário (kWh)</strong>
+              <span class="legend-dot dot-lime"></span> <strong>Média / Geração Solar (kWh)</strong>
+              <span class="legend-dot dot-burgundy"></span> <strong>Custo Diário Estimado (R$)</strong>
+            </div>
+            <div class="chart-quick-actions">
+              <span class="chart-hint">Curva de evolução diária do período selecionado</span>
+            </div>
+          </div>
+          <div class="main-canvas-box">
+            <canvas id="heroAreaChartCanvas" width="1100" height="270"></canvas>
+          </div>
+        </div>
+
+        <!-- Painéis Inferiores do Dashboard -->
+        <div class="bottom-three-grid">
+          <!-- Card 1: Registrar Leitura Exata do Medidor + Dia do Corte -->
+          <div class="e360-card">
+            <div class="card-title-row">
+              <h3>⚡ Registrar Leitura do Medidor</h3>
+              <span class="tag-pill">Medidor Casa</span>
+            </div>
+            <form id="readingForm" class="compact-form">
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="inputReadingDate">Data da Leitura</label>
+                  <input type="date" id="inputReadingDate" required />
+                </div>
+                <div class="form-group">
+                  <label for="inputMeterValue">Leitura no Medidor (kWh)</label>
+                  <input type="number" id="inputMeterValue" step="0.01" min="0" placeholder="Ex: 14325.40" required />
+                </div>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="inputSolarInjected">Solar Injetada (kWh)</label>
+                  <input type="number" id="inputSolarInjected" step="0.01" min="0" value="0" />
+                </div>
+                <div class="form-group">
+                  <label for="inputReadingNotes">Observação</label>
+                  <input type="text" id="inputReadingNotes" placeholder="Opcional..." />
+                </div>
+              </div>
+
+              <div class="cutoff-box-light">
+                <label class="checkbox-row">
+                  <input type="checkbox" id="inputIsCutoff" />
+                  <div>
+                    <strong>Marcar como DIA DO CORTE do Período</strong>
+                    <small>Fecha o valor exato gasto para o dia do vencimento.</small>
+                  </div>
+                </label>
+                <div id="nextPeriodOptions" class="next-period-sub hidden">
+                  <label class="checkbox-row">
+                    <input type="checkbox" id="inputStartNextPeriod" />
+                    <small>Iniciar próximo período automaticamente com esta leitura como base</small>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-btn-row">
+                <button type="submit" class="btn-forest">Salvar Leitura</button>
+                <button type="button" id="btnResetReadingForm" class="btn-light">Limpar</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Card 2: Comparativo Semanal & Mapa de Calor dos Dias do Ciclo -->
+          <div class="e360-card">
+            <div class="card-title-row">
+              <h3>📅 Mapa de Consumo &amp; Semanas</h3>
+              <div class="week-badges">
+                <span>Ciclo Atual <strong class="badge-green-dark" id="badgeCurrentKwh">0 kWh</strong></span>
+                <span>Projeção <strong class="badge-green-light" id="badgeProjectedKwh">0 kWh</strong></span>
+              </div>
+            </div>
+
+            <div class="heatmap-subtitle">Intensidade de Consumo por Dia do Período (Clique no dia para editar):</div>
+            <div id="periodHeatmapGrid" class="heatmap-calendar-grid"></div>
+
+            <div class="mini-bars-title">Últimas Leituras Diárias (kWh):</div>
+            <div id="miniDailyBars" class="mini-daily-bars"></div>
+          </div>
+
+          <!-- Card 3: Composição da Fatura Enel RJ / Maricá -->
+          <div class="e360-card">
+            <div class="card-title-row">
+              <h3>🧾 Composição da Conta (Maricá / RJ)</h3>
+              <span class="tag-pill" id="invoiceCalcModeBadge">Até o Momento</span>
+            </div>
+
+            <div class="horizontal-breakdown" id="horizontalBreakdownBars">
+              <div class="hbar-row">
+                <span class="hbar-label">Tarifa TUSD (Enel)</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarTusd" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdTusdValue">R$ 0,00</strong>
+              </div>
+              <div class="hbar-row">
+                <span class="hbar-label">Tarifa Energia (TE)</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarTe" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdTeValue">R$ 0,00</strong>
+              </div>
+              <div class="hbar-row">
+                <span class="hbar-label">ICMS + FECP (RJ)</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarIcms" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdIcmsTotalValue">R$ 0,00</strong>
+              </div>
+              <div class="hbar-row">
+                <span class="hbar-label">PIS + COFINS (Fed.)</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarFed" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdFedTotalValue">R$ 0,00</strong>
+              </div>
+              <div class="hbar-row">
+                <span class="hbar-label">COSIP (Maricá)</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarCosip" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdCosipValue">R$ 0,00</strong>
+              </div>
+              <div class="hbar-row">
+                <span class="hbar-label">Bandeira ANEEL</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarFlag" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdFlagValue">R$ 0,00</strong>
+              </div>
+              <div class="hbar-row">
+                <span class="hbar-label">Eventuais / Solar</span>
+                <div class="hbar-track"><div class="hbar-fill" id="hbarExtras" style="width: 0%"></div></div>
+                <strong class="hbar-val" id="bdExtrasValue">R$ 0,00</strong>
+              </div>
+            </div>
+
+            <div class="breakdown-footer-total">
+              <div>
+                <small id="bdTaxDetail">Fórmula Por Dentro ANEEL/RJ</small>
+                <div class="total-label">VALOR TOTAL CALCULADO</div>
+              </div>
+              <div class="total-amount" id="bdTotalValue">R$ 0,00</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- VIEW 2: GRID COMPLETO DE MARCAÇÃO DE CADA DIA DO PERÍODO VIGENTE  -->
+      <!-- ================================================================= -->
+      <section id="view-grid" class="view-section hidden">
+        <div class="e360-card">
+          <div class="card-title-row">
+            <div>
+              <h3>📅 Grid de Marcação Diária do Período Vigente</h3>
+              <p class="card-subtitle">Edite qualquer dia que você não tenha marcado ou tenha digitado errado. Veja a diferença em kWh entre cada dia e o valor acumulado.</p>
+            </div>
+            <div class="grid-filter-controls">
+              <label class="checkbox-row">
+                <input type="checkbox" id="chkShowOnlyRecorded" />
+                <span>Mostrar apenas dias com leitura registrada</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="e360-table" id="dailyGridTable">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Status</th>
+                  <th>Leitura no Medidor (kWh)</th>
+                  <th>Diferença / Consumo (Δ kWh)</th>
+                  <th>Acumulado no Ciclo (kWh)</th>
+                  <th>Custo Estimado (R$)</th>
+                  <th>Observações</th>
+                  <th class="text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody id="dailyGridBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- VIEW 3: PÁGINA DE GRÁFICOS DE CONSUMO EM KWH                      -->
+      <!-- ================================================================= -->
+      <section id="view-charts" class="view-section hidden">
+        <div class="e360-card">
+          <div class="card-title-row">
+            <div>
+              <h3>📈 Gráficos de Consumo de Energia Elétrica (em kWh)</h3>
+              <p class="card-subtitle">Acompanhe a evolução do consumo de energia elétrica por dia, semana, mês ou ano.</p>
+            </div>
+            <div class="chart-mode-tabs">
+              <button class="chart-tab active" data-chart-mode="daily">Diário (kWh)</button>
+              <button class="chart-tab" data-chart-mode="weekly">Semanal (kWh)</button>
+              <button class="chart-tab" data-chart-mode="monthly">Mensal (kWh)</button>
+              <button class="chart-tab" data-chart-mode="annual">Anual (kWh)</button>
+            </div>
+          </div>
+
+          <div class="chart-stats-bar">
+            <div class="stat-box">
+              <span>Consumo Total na Visão</span>
+              <strong id="chartStatTotal">0,00 kWh</strong>
+            </div>
+            <div class="stat-box">
+              <span>Média por Ponto</span>
+              <strong id="chartStatAvg">0,00 kWh</strong>
+            </div>
+            <div class="stat-box">
+              <span>Pico de Consumo</span>
+              <strong id="chartStatMax">0,00 kWh</strong>
+            </div>
+            <div class="stat-box">
+              <span>Menor Consumo (&gt; 0)</span>
+              <strong id="chartStatMin">0,00 kWh</strong>
+            </div>
+          </div>
+
+          <div class="chart-canvas-wrapper">
+            <canvas id="consumptionChartCanvas" width="1050" height="360"></canvas>
+          </div>
+
+          <div class="table-container mt-16">
+            <table class="e360-table">
+              <thead>
+                <tr>
+                  <th>Período / Data</th>
+                  <th>Consumo Medido (kWh)</th>
+                  <th>Detalhes Adicionais</th>
+                </tr>
+              </thead>
+              <tbody id="chartDataTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- VIEW 4: TELA DE CONFIGURAÇÃO DE TRIBUTOS, TAXAS E PARÂMETROS      -->
+      <!-- ================================================================= -->
+      <section id="view-settings" class="view-section hidden">
+        <form id="tariffConfigForm">
+          <div class="e360-card settings-header-card">
+            <div>
+              <h3>⚙️ Parâmetros Tarifários do Período: <span id="settingsPeriodName" class="text-forest">--</span></h3>
+              <p class="card-subtitle">
+                Editável e mantido no final de cada período para permitir <strong>cálculo retroativo exato</strong> de faturas passadas.
+              </p>
+            </div>
+            <div class="settings-toolbar-actions">
+              <label class="checkbox-row">
+                <input type="checkbox" id="chkApplyGlobalDefault" checked />
+                <span>Usar como padrão para futuros períodos</span>
+              </label>
+              <button type="submit" class="btn-forest">💾 Salvar Configurações do Período</button>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <!-- Bloco 1: Consumo e Tarifas Base (ANEEL / Enel RJ) -->
+            <div class="e360-card">
+              <div class="card-title-row">
+                <h3>1. Consumo, Classe e Tarifas Base (ANEEL / Enel RJ)</h3>
+                <span class="tag-pill">Regulação Federal</span>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgClasse">Classe do Imóvel</label>
+                  <select id="cfgClasse">
+                    <option value="Residencial B1">Residencial B1</option>
+                    <option value="Residencial Baixa Renda">Residencial Baixa Renda (Desconto Social)</option>
+                    <option value="Comercial">Comercial</option>
+                    <option value="Industrial">Industrial</option>
+                    <option value="Rural">Rural</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="cfgModalidade">Modalidade Tarifária</label>
+                  <select id="cfgModalidade">
+                    <option value="Convencional">Convencional (Preço único)</option>
+                    <option value="Tarifa Branca">Tarifa Branca (Ponta / Fora de Ponta)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgTipoLigacao">Padrão de Ligação (Taxa Mínima)</label>
+                  <select id="cfgTipoLigacao">
+                    <option value="Monofásico">Monofásico (30 kWh)</option>
+                    <option value="Bifásico">Bifásico (50 kWh)</option>
+                    <option value="Trifásico">Trifásico (100 kWh)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="cfgAplicarMinimo">Aplicar Custo de Disponibilidade no Fechamento?</label>
+                  <select id="cfgAplicarMinimo">
+                    <option value="true">Sim, cobrar taxa mínima no fechamento</option>
+                    <option value="false">Não, cobrar apenas kWh consumido</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgTe">Tarifa de Energia — TE (R$/kWh s/ tributos)</label>
+                  <input type="number" id="cfgTe" step="0.00001" min="0" required />
+                </div>
+
+                <div class="form-group">
+                  <label for="cfgTusd">Tarifa de Distribuição — TUSD (R$/kWh s/ tributos)</label>
+                  <input type="number" id="cfgTusd" step="0.00001" min="0" required />
+                </div>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgDiaCortePadrao">Dia de Corte Padrão</label>
+                  <input type="number" id="cfgDiaCortePadrao" min="1" max="31" required />
+                </div>
+
+                <div class="form-group">
+                  <label for="cfgDiaVencimentoPadrao">Dia de Vencimento da Conta</label>
+                  <input type="number" id="cfgDiaVencimentoPadrao" min="1" max="31" required />
+                </div>
+              </div>
+            </div>
+
+            <!-- Bloco 2: Bandeiras Tarifárias ANEEL -->
+            <div class="e360-card">
+              <div class="card-title-row">
+                <h3>2. Bandeiras Tarifárias (Sinalizador Mensal ANEEL)</h3>
+                <span class="tag-pill">Bandeira do Período</span>
+              </div>
+
+              <div class="form-group">
+                <label for="cfgBandeiraAtiva">Bandeira Vigente no Período</label>
+                <select id="cfgBandeiraAtiva">
+                  <option value="verde">🟢 Bandeira Verde (Sem acréscimo)</option>
+                  <option value="amarela">🟡 Bandeira Amarela (Acréscimo intermediário)</option>
+                  <option value="vermelha1">🔴 Bandeira Vermelha — Patamar 1</option>
+                  <option value="vermelha2">🔴 Bandeira Vermelha — Patamar 2</option>
+                </select>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgBandVerde">Verde (R$ por kWh)</label>
+                  <input type="number" id="cfgBandVerde" step="0.00001" min="0" />
+                </div>
+                <div class="form-group">
+                  <label for="cfgBandAmarela">Amarela (R$ por kWh)</label>
+                  <input type="number" id="cfgBandAmarela" step="0.00001" min="0" />
+                </div>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgBandVermelha1">Vermelha Patamar 1 (R$ por kWh)</label>
+                  <input type="number" id="cfgBandVermelha1" step="0.00001" min="0" />
+                </div>
+                <div class="form-group">
+                  <label for="cfgBandVermelha2">Vermelha Patamar 2 (R$ por kWh)</label>
+                  <input type="number" id="cfgBandVermelha2" step="0.00001" min="0" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Bloco 3: Tributos Federais e Estaduais (Cálculo "Por Dentro") -->
+            <div class="e360-card">
+              <div class="card-title-row">
+                <h3>3. Tributos Federais e Estaduais ("Cálculo Por Dentro")</h3>
+                <span class="tag-pill">PIS / COFINS / ICMS RJ</span>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgPis">Alíquota PIS (%)</label>
+                  <input type="number" id="cfgPis" step="0.01" min="0" max="30" required />
+                </div>
+                <div class="form-group">
+                  <label for="cfgCofins">Alíquota COFINS (%)</label>
+                  <input type="number" id="cfgCofins" step="0.01" min="0" max="30" required />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="cfgIcmsModo">Modo de Cálculo do ICMS + FECP (Estado do Rio de Janeiro)</label>
+                <select id="cfgIcmsModo">
+                  <option value="escalonado_rj">Escalonado RJ (Até 50 kWh Isento | 51-300 kWh 18% | &gt;300 kWh 20% + 4% FECP)</option>
+                  <option value="manual">Alíquota Fixa / Manual</option>
+                </select>
+              </div>
+
+              <div id="icmsEscalonadoBox" class="form-row three-cols">
+                <div class="form-group">
+                  <label for="cfgIcmsReduzida">51 a 300 kWh (%)</label>
+                  <input type="number" id="cfgIcmsReduzida" step="0.1" min="0" max="50" />
+                </div>
+                <div class="form-group">
+                  <label for="cfgIcmsCheia">&gt; 300 kWh ICMS (%)</label>
+                  <input type="number" id="cfgIcmsCheia" step="0.1" min="0" max="50" />
+                </div>
+                <div class="form-group">
+                  <label for="cfgFecpCheia">&gt; 300 kWh FECP (%)</label>
+                  <input type="number" id="cfgFecpCheia" step="0.1" min="0" max="20" />
+                </div>
+              </div>
+
+              <div id="icmsManualBox" class="form-row two-cols hidden">
+                <div class="form-group">
+                  <label for="cfgIcmsManual">ICMS Manual (%)</label>
+                  <input type="number" id="cfgIcmsManual" step="0.1" min="0" max="50" />
+                </div>
+                <div class="form-group">
+                  <label for="cfgFecpManual">FECP Manual (%)</label>
+                  <input type="number" id="cfgFecpManual" step="0.1" min="0" max="20" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Bloco 4: Contribuição Municipal (COSIP - Maricá) -->
+            <div class="e360-card">
+              <div class="card-title-row">
+                <h3>4. Contribuição Municipal (COSIP - Maricá)</h3>
+                <span class="tag-pill">Lei nº 2.039-G/2002</span>
+              </div>
+
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="cfgCosipModo">Modo de Cobrança da COSIP Maricá</label>
+                  <select id="cfgCosipModo">
+                    <option value="tabela_marica">Tabela Municipal por Faixa de Consumo (kWh)</option>
+                    <option value="fixo">Valor Fixo da Fatura (R$)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="cfgCosipValorFixo">Valor Fixo COSIP (R$)</label>
+                  <input type="number" id="cfgCosipValorFixo" step="0.01" min="0" />
+                </div>
+              </div>
+
+              <div class="cosip-table-editor">
+                <label class="small-bold">Tabela de Faixas COSIP Maricá (Editável):</label>
+                <div id="cosipFaixasContainer" class="cosip-faixas-grid"></div>
+              </div>
+            </div>
+
+            <!-- Bloco 5: Parâmetros Específicos e Eventuais -->
+            <div class="e360-card full-width">
+              <div class="card-title-row">
+                <h3>5. Parâmetros Específicos e Eventuais (Geração Solar, Encargos de Atraso e Alta Tensão)</h3>
+                <span class="tag-pill">Lei 14.300 &amp; Eventuais</span>
+              </div>
+
+              <div class="form-row three-cols">
+                <div class="subcard">
+                  <h4>☀️ Geração Distribuída (Solar / Lei 14.300)</h4>
+                  <label class="checkbox-row mb-8">
+                    <input type="checkbox" id="cfgPossuiSolar" />
+                    <span>Possui Geração Solar / Créditos</span>
+                  </label>
+                  <div class="form-group">
+                    <label for="cfgSolarInjetada">Energia Injetada no Mês (kWh)</label>
+                    <input type="number" id="cfgSolarInjetada" step="0.01" min="0" />
+                  </div>
+                  <div class="form-group">
+                    <label for="cfgSolarCreditos">Créditos Acumulados (kWh)</label>
+                    <input type="number" id="cfgSolarCreditos" step="0.01" min="0" />
+                  </div>
+                  <div class="form-group">
+                    <label for="cfgSolarFioB">Parcela Fio B TUSD (%)</label>
+                    <input type="number" id="cfgSolarFioB" step="0.1" min="0" max="100" />
+                  </div>
+                </div>
+
+                <div class="subcard">
+                  <h4>⏱️ Encargos por Atraso e Serviços</h4>
+                  <div class="form-row two-cols">
+                    <div class="form-group">
+                      <label for="cfgDiasAtraso">Dias de Atraso</label>
+                      <input type="number" id="cfgDiasAtraso" min="0" max="365" />
+                    </div>
+                    <div class="form-group">
+                      <label for="cfgMultaPercent">Multa (máx 2%)</label>
+                      <input type="number" id="cfgMultaPercent" step="0.1" min="0" max="2" />
+                    </div>
+                  </div>
+                  <div class="form-row two-cols">
+                    <div class="form-group">
+                      <label for="cfgJurosMensal">Juros Mora (% a.m.)</label>
+                      <input type="number" id="cfgJurosMensal" step="0.1" min="0" max="10" />
+                    </div>
+                    <div class="form-group">
+                      <label for="cfgCorrecaoMonetaria">Correção Monetária (R$)</label>
+                      <input type="number" id="cfgCorrecaoMonetaria" step="0.01" min="0" />
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="cfgTaxasExtras">Taxas Eventuais / Religação / Parcelas (R$)</label>
+                    <input type="number" id="cfgTaxasExtras" step="0.01" min="0" />
+                  </div>
+                </div>
+
+                <div class="subcard">
+                  <h4>🏭 Alta Tensão (Grupo A)</h4>
+                  <label class="checkbox-row mb-8">
+                    <input type="checkbox" id="cfgGrupoAAtivo" />
+                    <span>Habilitar Demanda Contratada (Grupo A)</span>
+                  </label>
+                  <div class="form-row two-cols">
+                    <div class="form-group">
+                      <label for="cfgDemandaContratada">Demanda Contratada (kW)</label>
+                      <input type="number" id="cfgDemandaContratada" step="0.1" min="0" />
+                    </div>
+                    <div class="form-group">
+                      <label for="cfgDemandaMedida">Demanda Medida (kW)</label>
+                      <input type="number" id="cfgDemandaMedida" step="0.1" min="0" />
+                    </div>
+                  </div>
+                  <div class="form-row two-cols">
+                    <div class="form-group">
+                      <label for="cfgTarifaDemanda">Tarifa Demanda (R$/kW)</label>
+                      <input type="number" id="cfgTarifaDemanda" step="0.01" min="0" />
+                    </div>
+                    <div class="form-group">
+                      <label for="cfgReativaExcedente">Reativa Excedente (R$)</label>
+                      <input type="number" id="cfgReativaExcedente" step="0.01" min="0" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="formula-reference-box">
+                <div>
+                  <strong>Fórmula Oficial de Cálculo (Baixa Tensão — Maricá / Enel RJ):</strong>
+                  <p>Valor Total = [ Consumo (kWh) × (TE + TUSD + Bandeira) / (1 - (PIS + COFINS + ICMS_RJ)) ] + COSIP_Maricá + Eventuais</p>
+                </div>
+                <img src="../../Calculo.png" alt="Fórmula de Cálculo" onerror="this.src='/Calculo.png'" class="formula-img" />
+              </div>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- VIEW 5: MENU DE CRÉDITOS DO DESENVOLVEDOR & SOBRE O APLICATIVO    -->
+      <!-- ================================================================= -->
+      <section id="view-credits" class="view-section hidden">
+        <div class="e360-card credits-hero-card">
+          <div class="credits-hero-icon">⚡</div>
+          <div class="credits-hero-body">
+            <div class="credits-title-row">
+              <h3>Whattz E360 — Controle Diário de Energia Elétrica</h3>
+              <span class="badge-pill status-open">Versão 1.0.0 • Edição 2026</span>
+            </div>
+            <p class="card-subtitle">
+              Aplicativo desktop multiplataforma para monitoramento diário do medidor residencial/comercial e cálculo tarifário preciso da Enel Distribuição Rio no município de Maricá (RJ).
+            </p>
+            <div class="credits-tech-row">
+              <span class="tag-pill">Electron Desktop</span>
+              <span class="tag-pill">Node.js</span>
+              <span class="tag-pill">Armazenamento Local JSON Atômico</span>
+              <span class="tag-pill">Windows &amp; Linux</span>
+              <span class="tag-pill">Licença MIT</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Card 1: Autor e Créditos do Desenvolvedor -->
+          <div class="e360-card">
+            <div class="card-title-row">
+              <h3>👨‍💻 Créditos do Desenvolvedor</h3>
+              <span class="tag-pill">Autoria &amp; Criação</span>
+            </div>
+
+            <div class="author-profile-box">
+              <div class="author-monogram">LM</div>
+              <div class="author-bio">
+                <h4>Leandro Mendonça</h4>
+                <span class="author-role-label">Autor, Arquiteto de Software &amp; Desenvolvedor Principal</span>
+                <p>
+                  Idealizado e desenvolvido em <strong>2026</strong> com o objetivo de oferecer controle transparente sobre o gasto diário de energia elétrica, cálculo fiel dos tributos "por dentro" e instalação descomplicada em qualquer máquina Windows ou Linux.
+                </p>
+              </div>
+            </div>
+
+            <div class="credits-info-table">
+              <div class="credits-info-row">
+                <span>Autor / Desenvolvedor</span>
+                <strong>Leandro Mendonça</strong>
+              </div>
+              <div class="credits-info-row">
+                <span>Ano de Criação</span>
+                <strong>2026</strong>
+              </div>
+              <div class="credits-info-row">
+                <span>Versão do Aplicativo</span>
+                <strong>1.0.0 (Build Estável)</strong>
+              </div>
+              <div class="credits-info-row">
+                <span>Direitos Autorais</span>
+                <strong>Copyright © 2026 Leandro Mendonça</strong>
+              </div>
+              <div class="credits-info-row">
+                <span>Licença de Software</span>
+                <strong>MIT License (Código Aberto / Uso Livre)</strong>
+              </div>
+              <div class="credits-info-row">
+                <span>Sistemas Operacionais</span>
+                <strong>Windows 10/11 (x64) e Linux (AppImage / .deb)</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Base Regulatória e Arquitetura -->
+          <div class="e360-card">
+            <div class="card-title-row">
+              <h3>🏛️ Base Regulatória &amp; Arquitetura</h3>
+              <span class="tag-pill">Maricá / Enel RJ</span>
+            </div>
+
+            <div class="credits-reg-list">
+              <div class="subcard mb-8">
+                <h4>⚡ Regulação Federal (ANEEL / Enel Distribuição Rio)</h4>
+                <p class="credits-small-text">
+                  Tarifa de Energia (TE), Tarifa de Uso do Sistema de Distribuição (TUSD), Custo de Disponibilidade (30 / 50 / 100 kWh), Bandeiras Tarifárias e Geração Distribuída Solar (Lei nº 14.300/2022).
+                </p>
+              </div>
+              <div class="subcard mb-8">
+                <h4>📊 Tributação Federal e Estadual (SEFAZ-RJ)</h4>
+                <p class="credits-small-text">
+                  Cálculo "por dentro" para PIS, COFINS e ICMS + FECP do Estado do Rio de Janeiro (Isento até 50 kWh, 18% de 51 a 300 kWh e 20% ICMS + 4% FECP acima de 300 kWh).
+                </p>
+              </div>
+              <div class="subcard">
+                <h4>🏙️ Contribuição Municipal (COSIP — Maricá/RJ)</h4>
+                <p class="credits-small-text">
+                  Custeio do Serviço de Iluminação Pública regido pela Lei Municipal de Maricá nº 2.039-G/2002 e suas alterações, configurável por faixas de consumo.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Histórico de Versões (Changelog) e Aviso Legal -->
+          <div class="e360-card full-width">
+            <div class="card-title-row">
+              <h3>📜 Histórico de Versões (Changelog) &amp; Aviso Legal</h3>
+              <span class="tag-pill">Release Notes</span>
+            </div>
+
+            <div class="form-row two-cols">
+              <div class="subcard">
+                <h4>🚀 Versão 1.0.0 — Lançamento Oficial (2026)</h4>
+                <ul class="credits-changelog-list">
+                  <li>Cadastro diário do valor exato do medidor com cálculo automático da diferença em kWh.</li>
+                  <li>Marcação do Dia do Corte do período para fechamento preciso no dia do vencimento.</li>
+                  <li>Preservação das tarifas e tributos por período para cálculo retroativo fiel.</li>
+                  <li>Grid diário completo do ciclo vigente para edição de dias não marcados ou digitados errado.</li>
+                  <li>Gráficos interativos de consumo em kWh (Diário, Semanal, Mensal e Anual).</li>
+                  <li>Armazenamento local em arquivo JSON com escrita atômica e backup integrado (sem banco de dados).</li>
+                </ul>
+              </div>
+
+              <div class="subcard">
+                <h4>⚖️ Aviso Legal &amp; Direitos Autorais (Disclaimer)</h4>
+                <p class="credits-small-text mb-8">
+                  O <strong>Whattz E360</strong> foi criado e desenvolvido por <strong>Leandro Mendonça</strong> em <strong>2026</strong> como uma ferramenta independente de apoio ao controle doméstico e comercial de consumo de energia elétrica.
+                </p>
+                <p class="credits-small-text mb-8">
+                  Este software não possui vínculo oficial com a <em>Enel Distribuição Rio</em>, <em>ANEEL</em> ou <em>Prefeitura Municipal de Maricá</em>. Os cálculos seguem rigorosamente as fórmulas tarifárias vigentes a partir dos parâmetros informados pelo usuário.
+                </p>
+                <div class="credits-copyright-banner">
+                  <strong>Copyright © 2026 Leandro Mendonça</strong> — Todos os direitos reservados • Desenvolvido no Brasil 🇧🇷
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Configurar / Criar Período e Leitura Base -->
+  <div id="periodModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="periodModalTitle">Configurar Ciclo / Período de Faturamento</h3>
+        <button id="btnClosePeriodModal" class="btn-close">✕</button>
+      </div>
+      <form id="periodMetaForm">
+        <input type="hidden" id="modalPeriodMode" value="edit" />
+        <div class="form-group">
+          <label for="modalPeriodName">Identificação do Período</label>
+          <input type="text" id="modalPeriodName" placeholder="Ex: Novembro/2026" required />
+        </div>
+        <div class="form-row three-cols">
+          <div class="form-group">
+            <label for="modalStartDate">Data Inicial</label>
+            <input type="date" id="modalStartDate" required />
+          </div>
+          <div class="form-group">
+            <label for="modalCutoffDate">Data Prevista do Corte</label>
+            <input type="date" id="modalCutoffDate" required />
+          </div>
+          <div class="form-group">
+            <label for="modalDueDate">Data de Vencimento</label>
+            <input type="date" id="modalDueDate" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="modalInitialMeter">Leitura Base do Medidor no Início do Ciclo (kWh - Opcional)</label>
+          <input type="number" id="modalInitialMeter" step="0.01" min="0" placeholder="Deixe vazio para usar a 1ª leitura registrada" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btnCancelPeriodModal" class="btn-light">Cancelar</button>
+          <button type="submit" class="btn-forest">Salvar Período</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="charts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

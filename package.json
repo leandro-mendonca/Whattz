@@ -1,0 +1,60 @@
+{
+  "name": "whattz",
+  "version": "1.0.0",
+  "description": "Aplicativo desktop para controle diário de consumo de energia elétrica e cálculo de fatura (Enel RJ / Maricá)",
+  "main": "src/main/main.js",
+  "author": "Leandro Mendonça",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "web": "node src/main/web-server.js",
+    "test": "node test/calculator.test.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder -wl",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:win": "electron-builder --win nsis portable"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "br.com.whattz.energia",
+    "productName": "Whattz - Controle de Energia",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "synopsis": "Controle diário de consumo de energia elétrica (Maricá / Enel RJ)",
+      "maintainer": "Leandro Mendonça <leandro@whattz.local>"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Whattz Energia"
+    }
+  }
+}
