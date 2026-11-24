@@ -52,6 +52,9 @@ const server = http.createServer((req, res) => {
           case '/api/createNewPeriod':
             result = storage.createNewPeriod(payload);
             break;
+          case '/api/deletePeriod':
+            result = storage.deletePeriod(payload.periodId);
+            break;
           case '/api/updateTariffConfig':
             result = storage.updateTariffConfig(payload.periodId, payload.config, payload.applyAsGlobalDefault);
             break;

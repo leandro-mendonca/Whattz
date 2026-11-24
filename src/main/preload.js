@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('whattzAPI', {
   deleteReading: (periodId, date) => ipcRenderer.invoke('whattz:deleteReading', { periodId, date }),
   updatePeriodMetadata: (periodId, metadata) => ipcRenderer.invoke('whattz:updatePeriodMetadata', { periodId, metadata }),
   createNewPeriod: (payload) => ipcRenderer.invoke('whattz:createNewPeriod', payload),
+  deletePeriod: (periodId) => ipcRenderer.invoke('whattz:deletePeriod', periodId),
   updateTariffConfig: (periodId, config, applyAsGlobalDefault = true) =>
     ipcRenderer.invoke('whattz:updateTariffConfig', { periodId, config, applyAsGlobalDefault }),
   simulateInvoice: (consumoKwh, config, options) =>

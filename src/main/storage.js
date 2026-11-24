@@ -44,7 +44,73 @@ class FileStorage {
     if (!this.data || !Array.isArray(this.data.periods) || this.data.periods.length === 0) {
       this.data = this._createInitialData();
       this.save();
+    } else {
+      // Consolida eventuais períodos duplicados do mesmo Mês/Ano (ex: dois "Dezembro/2026")
+      const changed = this._deduplicatePeriodsByMonthYear();
+      if (changed) {
+        this.save();
+      }
     }
+  }
+
+  /**
+   * Retorna a chave única Mês/Ano (ex: "2026-12") de um período com base no nome ("Dezembro/2026")
+   * ou na data de corte prevista (expectedCutoffDate).
+   */
+  _getPeriodMonthYearKey(periodOrObj) {
+    const mesesMap = {
+      janeiro: '01', fevereiro: '02', 'março': '03', marco: '03', abril: '04',
+      maio: '05', junho: '06', julho: '07', agosto: '08',
+      setembro: '09', outubro: '10', novembro: '11', dezembro: '12'
+    };
+    const nameStr = String(periodOrObj.name || '').trim().toLowerCase();
+    const matchName = nameStr.match(/^([a-zç]+)\s*\/\s*(\d{4})$/i);
+    if (matchName) {
+      const m = mesesMap[matchName[1]];
+      if (m) return `${matchName[2]}-${m}`;
+    }
+
+    const refDate = periodOrObj.expectedCutoffDate || periodOrObj.cutoffDate || periodOrObj.startDate || '';
+    if (/^\d{4}-\d{2}/.test(refDate)) {
+      return refDate.slice(0, 7);
+    }
+    return nameStr || String(periodOrObj.id || '');
+  }
+
+  /**
+   * Garante que não existam dois períodos do mesmo Mês/Ano no arquivo de dados,
+   * mesclando leituras caso tenham sido criados duplicados por acidente.
+   */
+  _deduplicatePeriodsByMonthYear() {
+    if (!this.data || !Array.isArray(this.data.periods) || this.data.periods.length <= 1) {
+      return false;
+    }
+
+    const byKey = new Map();
+    let hadDuplicates = false;
+
+    for (const p of this.data.periods) {
+      const key = this._getPeriodMonthYearKey(p);
+      if (!byKey.has(key)) {
+        byKey.set(key, p);
+      } else {
+        hadDuplicates = true;
+        const existing = byKey.get(key);
+        // Se um dos períodos duplicados era o período ativo ou foi editado manualmente por último,
+        // prioriza o período ativo do usuário em vez de misturar com dados de exemplo antigos
+        const preferSecond = (this.data.activePeriodId === p.id) || (existing.id === 'period-2026-12' && p.id !== 'period-2026-12');
+        const winner = preferSecond ? p : existing;
+        byKey.set(key, winner);
+        if (this.data.activePeriodId === existing.id || this.data.activePeriodId === p.id) {
+          this.data.activePeriodId = winner.id;
+        }
+      }
+    }
+
+    if (hadDuplicates) {
+      this.data.periods = Array.from(byKey.values());
+    }
+    return hadDuplicates;
   }
 
   _createInitialData() {
@@ -220,12 +286,35 @@ class FileStorage {
     const period = this.getPeriodById(periodId);
     if (!period) throw new Error('Período não encontrado.');
 
-    if (meta.name !== undefined) period.name = String(meta.name).trim() || period.name;
+    const candidateName = meta.name !== undefined
+      ? (String(meta.name).trim() || period.name)
+      : (meta.expectedCutoffDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.expectedCutoffDate)
+          ? formatPeriodLabel(new Date(`${meta.expectedCutoffDate}T00:00:00Z`))
+          : period.name);
+    const candidateCutoff = (meta.expectedCutoffDate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(meta.expectedCutoffDate))
+      ? meta.expectedCutoffDate
+      : period.expectedCutoffDate;
+
+    // Verifica se a alteração de nome ou data de corte conflita com outro período do mesmo Mês/Ano
+    const candidateKey = this._getPeriodMonthYearKey({ name: candidateName, expectedCutoffDate: candidateCutoff });
+    const conflict = this.data.periods.find(p => p.id !== period.id && this._getPeriodMonthYearKey(p) === candidateKey);
+    if (conflict) {
+      throw new Error(`Já existe um período cadastrado para este mês/ano (${conflict.name}). Não é permitido ter dois períodos do mesmo mês no mesmo ano.`);
+    }
+
+    period.name = candidateName;
     if (meta.startDate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(meta.startDate)) {
       period.startDate = meta.startDate;
     }
-    if (meta.expectedCutoffDate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(meta.expectedCutoffDate)) {
-      period.expectedCutoffDate = meta.expectedCutoffDate;
+    period.expectedCutoffDate = candidateCutoff;
+    // Se a data do corte foi alterada para outro mês, sincroniza period.id para manter consistência
+    const oldId = period.id;
+    const newSyncId = `period-${candidateKey}`;
+    if (oldId !== newSyncId && !this.data.periods.some(p => p.id === newSyncId)) {
+      period.id = newSyncId;
+      if (this.data.activePeriodId === oldId) {
+        this.data.activePeriodId = newSyncId;
+      }
     }
     if (meta.dueDate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(meta.dueDate)) {
       period.dueDate = meta.dueDate;
@@ -244,7 +333,34 @@ class FileStorage {
   }
 
   /**
+   * Exclui um período/ciclo de faturamento.
+   * Caso o usuário apague o único período existente, um período limpo padrão é recriado automaticamente.
+   */
+  deletePeriod(periodId) {
+    const targetId = periodId || this.data.activePeriodId;
+    const idx = this.data.periods.findIndex(p => p.id === targetId);
+    if (idx === -1) {
+      throw new Error('Período não encontrado para exclusão.');
+    }
+
+    this.data.periods.splice(idx, 1);
+
+    if (this.data.periods.length === 0) {
+      const fresh = this._createInitialData();
+      this.data.periods = fresh.periods;
+      this.data.activePeriodId = fresh.activePeriodId;
+    } else if (this.data.activePeriodId === targetId) {
+      const nextActive = this.data.periods[Math.min(idx, this.data.periods.length - 1)];
+      this.data.activePeriodId = nextActive.id;
+    }
+
+    this.save();
+    return this.getFullState();
+  }
+
+  /**
    * Cria um novo período/ciclo manualmente ou a partir do fechamento do ciclo anterior.
+   * Impede a criação de dois períodos para o mesmo mês e ano.
    */
   createNewPeriod(payload = {}) {
     const currentPeriod = this.getPeriodById(this.data.activePeriodId);
@@ -259,7 +375,14 @@ class FileStorage {
 
     const cutoffDateObj = new Date(`${expectedCutoffDate}T00:00:00Z`);
     const name = payload.name || formatPeriodLabel(cutoffDateObj);
-    const id = `period-${expectedCutoffDate}-${Date.now().toString().slice(-4)}`;
+
+    const candidateKey = this._getPeriodMonthYearKey({ name, expectedCutoffDate });
+    const existingSameMonth = this.data.periods.find(p => this._getPeriodMonthYearKey(p) === candidateKey);
+    if (existingSameMonth) {
+      throw new Error(`Já existe o período "${existingSameMonth.name}" cadastrado. Não é permitido criar dois períodos para o mesmo mês/ano.`);
+    }
+
+    const id = `period-${candidateKey}`;
 
     const newPeriod = {
       id,
@@ -293,6 +416,18 @@ class FileStorage {
       cutoffObj.getUTCDate()
     ));
     const nextExpectedCutoff = formatDateUTC(nextCutoffObj);
+    const nextName = formatPeriodLabel(nextCutoffObj);
+    const nextKey = this._getPeriodMonthYearKey({ name: nextName, expectedCutoffDate: nextExpectedCutoff });
+
+    // Se já existir um período para o próximo mês/ano, apenas atualiza a leitura base dele e o torna ativo (não duplica!)
+    const existingNext = this.data.periods.find(p => p.id !== closedPeriod.id && this._getPeriodMonthYearKey(p) === nextKey);
+    if (existingNext) {
+      existingNext.initialMeterValue = cutoffMeterValue;
+      existingNext.startDate = nextStartDate;
+      this.data.activePeriodId = existingNext.id;
+      return;
+    }
+
     const diaVenc = (closedPeriod.config && closedPeriod.config.diaVencimentoPadrao) || 25;
     const nextDueObj = new Date(Date.UTC(
       nextCutoffObj.getUTCFullYear(),
@@ -303,10 +438,10 @@ class FileStorage {
       nextDueObj.setUTCMonth(nextDueObj.getUTCMonth() + 1);
     }
 
-    const nextId = `period-${nextExpectedCutoff}-${Date.now().toString().slice(-4)}`;
+    const nextId = `period-${nextKey}`;
     const nextPeriod = {
       id: nextId,
-      name: formatPeriodLabel(nextCutoffObj),
+      name: nextName,
       startDate: nextStartDate,
       expectedCutoffDate: nextExpectedCutoff,
       dueDate: formatDateUTC(nextDueObj),
@@ -424,27 +559,47 @@ class FileStorage {
       isCutoff: item.isCutoff
     }));
 
-    // 2. Gráfico Semanal (agrupado por semana dentro do histórico ou período selecionado)
+    // 2. Gráfico Semanal (4 semanas de 7 dias do período selecionado)
+    const activeDailyItems = [...(activeSummary.dailyBreakdown || [])].sort((a, b) => a.date.localeCompare(b.date));
+    const periodStart = activePeriod.startDate;
+    const periodEnd = activePeriod.cutoffDate || activePeriod.expectedCutoffDate;
     const weeklyMap = new Map();
-    const allDailyItems = [];
-    allPeriodsSummaries.forEach(({ summary }) => {
-      (summary.dailyBreakdown || []).forEach(d => allDailyItems.push(d));
-    });
-    allDailyItems.sort((a, b) => a.date.localeCompare(b.date));
 
-    allDailyItems.forEach(item => {
-      const weekInfo = getIsoWeekLabel(item.date);
+    // Inicializa as semanas do ciclo vigente para exibir toda a estrutura semanal do período
+    if (periodStart && periodEnd && periodStart <= periodEnd) {
+      let wStart = periodStart;
+      let wIdx = 0;
+      while (wStart <= periodEnd && wIdx < 6) {
+        let wEnd = addDaysUTC(wStart, 6);
+        if (wEnd > periodEnd) wEnd = periodEnd;
+        const key = `W${String(wIdx + 1).padStart(2, '0')}`;
+        weeklyMap.set(key, {
+          key,
+          label: `Sem ${wIdx + 1} (${formatDayMonth(wStart)}-${formatDayMonth(wEnd)})`,
+          kwh: 0,
+          daysCount: 0,
+          lastMeterValue: null
+        });
+        wStart = addDaysUTC(wEnd, 1);
+        wIdx++;
+      }
+    }
+
+    activeDailyItems.forEach(item => {
+      const weekInfo = getPeriodWeekRangeLabel(item.date, periodStart, periodEnd);
       const curr = weeklyMap.get(weekInfo.key) || {
         key: weekInfo.key,
         label: weekInfo.label,
         kwh: 0,
-        daysCount: 0
+        daysCount: 0,
+        lastMeterValue: null
       };
       curr.kwh = round2(curr.kwh + item.deltaKwh);
       curr.daysCount += 1;
+      curr.lastMeterValue = item.meterValue;
       weeklyMap.set(weekInfo.key, curr);
     });
-    const weeklySeries = Array.from(weeklyMap.values()).slice(-16);
+    const weeklySeries = Array.from(weeklyMap.values());
 
     // 3. Gráfico Mensal (consumo em kWh por período/mês de faturamento)
     const monthlySeries = allPeriodsSummaries.map(({ period, summary }) => ({
@@ -647,6 +802,29 @@ function getIsoWeekLabel(dateStr) {
   return {
     key: `${year}-W${String(weekNo).padStart(2, '0')}`,
     label: `Sem ${String(weekNo).padStart(2, '0')}/${String(year).slice(-2)}`
+  };
+}
+
+/**
+ * Agrupa as leituras do período em semanas de 7 dias a partir da data inicial do período
+ * (ex: "Sem 1 (14/11 a 20/11)"), garantindo que o gráfico semanal reflita exatamente o período selecionado.
+ */
+function getPeriodWeekRangeLabel(dateStr, periodStartStr, periodEndStr) {
+  const startBase = periodStartStr && periodStartStr <= dateStr ? periodStartStr : dateStr;
+  const startObj = new Date(`${startBase}T00:00:00Z`);
+  const currObj = new Date(`${dateStr}T00:00:00Z`);
+  const diffDaysCount = Math.max(0, Math.floor((currObj - startObj) / 86400000));
+  const weekIndex = Math.floor(diffDaysCount / 7);
+
+  const weekStartStr = addDaysUTC(startBase, weekIndex * 7);
+  let weekEndStr = addDaysUTC(weekStartStr, 6);
+  if (periodEndStr && weekEndStr > periodEndStr) {
+    weekEndStr = periodEndStr;
+  }
+
+  return {
+    key: `W${String(weekIndex + 1).padStart(2, '0')}`,
+    label: `Sem ${weekIndex + 1} (${formatDayMonth(weekStartStr)}-${formatDayMonth(weekEndStr)})`
   };
 }
 

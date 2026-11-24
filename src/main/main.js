@@ -14,6 +14,8 @@ let storage = null;
 // Define o identificador da aplicação para associação correta do ícone no Linux (GNOME Wayland/X11) e Windows
 app.setName('whattz');
 if (process.platform === 'linux') {
+  // Evita crash no Ubuntu 24.04+ / Debian recente devido a kernel.apparmor_restrict_unprivileged_userns = 1
+  app.commandLine.appendSwitch('no-sandbox');
   app.commandLine.appendSwitch('class', 'whattz');
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
   app.setDesktopName('whattz.desktop');
@@ -48,7 +50,7 @@ function buildNativeMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'Créditos do Desenvolvedor — Whattz E360',
-              message: 'Whattz E360 — Controle Diário de Energia Elétrica (v1.0.0)',
+              message: 'Whattz E360 — Controle Diário de Energia Elétrica (v1.1.0)',
               detail:
                 'Autor / Desenvolvedor: Leandro Mendonça\n' +
                 'Ano de Criação: 2026\n' +
@@ -145,6 +147,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('whattz:createNewPeriod', async (_event, payload) => {
     return storage.createNewPeriod(payload);
+  });
+
+  ipcMain.handle('whattz:deletePeriod', async (_event, periodId) => {
+    return storage.deletePeriod(periodId);
   });
 
   ipcMain.handle('whattz:updateTariffConfig', async (_event, { periodId, config, applyAsGlobalDefault }) => {

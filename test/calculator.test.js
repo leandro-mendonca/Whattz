@@ -78,15 +78,75 @@ console.log('Iniciando testes do motor de cálculo Whattz (Maricá / Enel RJ)...
     expectedCutoffDate: '2026-11-30',
     initialMeterValue: 1000
   });
+  const updatedPeriodId = storage.getFullState().activePeriodId;
 
-  storage.upsertReading(periodId, { date: '2026-11-01', meterValue: 1010, isCutoff: false });
-  storage.upsertReading(periodId, { date: '2026-11-02', meterValue: 1025, isCutoff: false });
-  const stateAfter = storage.upsertReading(periodId, { date: '2026-11-03', meterValue: 1040, isCutoff: true });
+  // No início do período (0 kWh medidos), já deve aplicar a franquia mínima (50 kWh para Bifásico)
+  assert.strictEqual(state0.activeSummary.consumoAcumuladoKwh, 0);
+  assert.strictEqual(state0.activeSummary.faturaAtual.consumoFaturadoKwh, 50, 'No começo do período deve aplicar a franquia mínima de 50 kWh (Bifásico)');
+  assert.strictEqual(state0.activeSummary.faturaAtual.aplicouCustoDisponibilidade, true);
+  const valorMinimoInicial = state0.activeSummary.faturaAtual.valorTotalFatura;
+  assert.ok(valorMinimoInicial > 0, 'O valor da fatura no começo do período já deve partir do valor mínimo');
 
-  assert.strictEqual(stateAfter.activeSummary.consumoAcumuladoKwh, 40, 'Diferença entre 1040 e base 1000 deve ser 40 kWh');
+  storage.upsertReading(updatedPeriodId, { date: '2026-11-01', meterValue: 1010, isCutoff: false });
+  storage.upsertReading(updatedPeriodId, { date: '2026-11-02', meterValue: 1025, isCutoff: false });
+  const stateAt40 = storage.upsertReading(updatedPeriodId, { date: '2026-11-03', meterValue: 1040, isCutoff: false });
+
+  assert.strictEqual(stateAt40.activeSummary.consumoAcumuladoKwh, 40, 'Diferença entre 1040 e base 1000 deve ser 40 kWh');
+  assert.strictEqual(stateAt40.activeSummary.faturaAtual.consumoFaturadoKwh, 50, 'Com 40 kWh medidos (< 50 kWh), ainda mantém o mínimo de 50 kWh');
+  assert.strictEqual(stateAt40.activeSummary.faturaAtual.valorTotalFatura, valorMinimoInicial);
+
+  // Ao ultrapassar 50 kWh (ex: medidor em 1065 = 65 kWh), atualiza o valor da fatura em tempo real
+  const stateAfter = storage.upsertReading(updatedPeriodId, { date: '2026-11-04', meterValue: 1065, isCutoff: true });
+  assert.strictEqual(stateAfter.activeSummary.consumoAcumuladoKwh, 65);
+  assert.strictEqual(stateAfter.activeSummary.faturaAtual.consumoFaturadoKwh, 65, 'Ao passar de 50 kWh, o consumo faturado passa a ser o consumo real (65 kWh)');
+  assert.strictEqual(stateAfter.activeSummary.faturaAtual.aplicouCustoDisponibilidade, false);
+  assert.ok(stateAfter.activeSummary.faturaAtual.valorTotalFatura > valorMinimoInicial, 'O valor da fatura deve subir assim que ultrapassar o mínimo');
   assert.strictEqual(stateAfter.activeSummary.isClosed, true, 'Marcar dia do corte deve fechar o cálculo oficial no corte');
-  assert.strictEqual(stateAfter.activeSummary.dailyBreakdown.length, 3);
+  assert.strictEqual(stateAfter.activeSummary.dailyBreakdown.length, 4);
   assert.strictEqual(stateAfter.activeSummary.dailyBreakdown[1].deltaKwh, 15, 'Diferença entre dia 01 (1010) e dia 02 (1025) deve ser 15 kWh');
+
+  // 4. Teste de edição do Initial Meter Value (valor inicial do medidor)
+  const stateEditedBase = storage.updatePeriodMetadata(updatedPeriodId, {
+    initialMeterValue: 1005
+  });
+  assert.strictEqual(stateEditedBase.activeSummary.baseMeterValue, 1005, 'O valor base inicial do período deve ser editável');
+  assert.strictEqual(stateEditedBase.activeSummary.consumoAcumuladoKwh, 60, 'Novo consumo acumulado entre 1065 e nova base 1005 deve ser 60 kWh');
+
+  // 5. Teste de bloqueio de mês/ano duplicado e exclusão de período
+  assert.throws(() => {
+    storage.createNewPeriod({
+      name: stateEditedBase.activePeriod.name,
+      startDate: '2026-11-01',
+      expectedCutoffDate: '2026-11-30',
+      dueDate: '2026-12-10'
+    });
+  }, /Já existe o período/, 'Não deve permitir criar dois períodos para o mesmo mês/ano');
+
+  const stateWithNext = storage.createNewPeriod({
+    name: 'Dezembro/2026',
+    startDate: '2026-12-01',
+    expectedCutoffDate: '2026-12-30',
+    dueDate: '2027-01-10',
+    initialMeterValue: 1065
+  });
+  assert.strictEqual(stateWithNext.periodsList.length, 2);
+
+  // Mesmo se marcar novamente o dia do corte com startNextPeriod=true no período de Novembro, não deve duplicar Dezembro/2026
+  storage.setActivePeriod(updatedPeriodId);
+  const stateNoDup = storage.upsertReading(updatedPeriodId, {
+    date: '2026-11-04',
+    meterValue: 1068,
+    isCutoff: true,
+    startNextPeriod: true
+  });
+  assert.strictEqual(stateNoDup.periodsList.length, 2, 'Marcar início do próximo período no corte não deve duplicar Dezembro/2026');
+  assert.strictEqual(stateNoDup.activeSummary.baseMeterValue, 1068, 'Deve atualizar o valor inicial de Dezembro/2026 para 1068');
+
+  // Apagar o período de Dezembro/2026
+  const decId = stateNoDup.activePeriodId;
+  const stateAfterDelete = storage.deletePeriod(decId);
+  assert.strictEqual(stateAfterDelete.periodsList.length, 1, 'Deve apagar o período selecionado com sucesso');
+  assert.strictEqual(stateAfterDelete.activePeriodId, updatedPeriodId);
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }

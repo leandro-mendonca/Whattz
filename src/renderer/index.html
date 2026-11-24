@@ -95,7 +95,8 @@
           <label for="periodSelect" class="filter-label">Período:</label>
           <select id="periodSelect" class="e360-select" title="Selecionar Ciclo de Faturamento"></select>
           <button id="btnNewPeriod" class="btn-outline-pill" title="Novo Ciclo">+ Novo Ciclo</button>
-          <button id="btnEditPeriodMeta" class="btn-outline-pill" title="Configurar Datas e Leitura Inicial">Ajustar Datas</button>
+          <button id="btnEditPeriodMeta" class="btn-outline-pill" title="Editar Leitura Inicial (Base) e Datas do Período">✏️ Base &amp; Datas</button>
+          <button id="btnDeletePeriod" class="btn-outline-pill btn-danger-pill" title="Apagar Período Selecionado">🗑️ Apagar Período</button>
           <div class="date-box" title="Início do Período">
             <small>Início:</small> <span id="topStartDate">--/--/----</span>
           </div>
@@ -118,7 +119,10 @@
         <div class="e360-kpi-card">
           <div class="e360-kpi-title">⚡ Consumo Acumulado (kWh)</div>
           <div class="e360-kpi-number" id="kpiAccumulatedKwh">0,00</div>
-          <div class="e360-kpi-sub">Diferença sobre base <strong id="kpiBaseMeter">0,00 kWh</strong></div>
+          <div class="e360-kpi-sub">
+            Base Inicial: <strong id="kpiBaseMeter">0,00 kWh</strong>
+            <button type="button" id="btnQuickEditInitialMeter" class="btn-inline-edit" title="Editar valor inicial do medidor neste período">✏️ Editar</button>
+          </div>
         </div>
 
         <div class="e360-kpi-card">
@@ -234,7 +238,7 @@
             <div class="heatmap-subtitle">Intensidade de Consumo por Dia do Período (Clique no dia para editar):</div>
             <div id="periodHeatmapGrid" class="heatmap-calendar-grid"></div>
 
-            <div class="mini-bars-title">Últimas Leituras Diárias (kWh):</div>
+            <div class="mini-bars-title">Leituras no Medidor &amp; Consumo (Δ kWh):</div>
             <div id="miniDailyBars" class="mini-daily-bars"></div>
           </div>
 
@@ -449,10 +453,10 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="cfgAplicarMinimo">Aplicar Custo de Disponibilidade no Fechamento?</label>
+                  <label for="cfgAplicarMinimo">Aplicar Valor Mínimo (Custo de Disponibilidade)?</label>
                   <select id="cfgAplicarMinimo">
-                    <option value="true">Sim, cobrar taxa mínima no fechamento</option>
-                    <option value="false">Não, cobrar apenas kWh consumido</option>
+                    <option value="true">Sim, iniciar no mínimo e atualizar ao ultrapassar</option>
+                    <option value="false">Não, cobrar apenas kWh consumido desde zero</option>
                   </select>
                 </div>
               </div>
@@ -693,7 +697,6 @@
                   <strong>Fórmula Oficial de Cálculo (Baixa Tensão — Maricá / Enel RJ):</strong>
                   <p>Valor Total = [ Consumo (kWh) × (TE + TUSD + Bandeira) / (1 - (PIS + COFINS + ICMS_RJ)) ] + COSIP_Maricá + Eventuais</p>
                 </div>
-                <img src="../../Calculo.png" alt="Fórmula de Cálculo" onerror="this.src='/Calculo.png'" class="formula-img" />
               </div>
             </div>
           </div>
@@ -709,7 +712,7 @@
           <div class="credits-hero-body">
             <div class="credits-title-row">
               <h3>Whattz E360 — Controle Diário de Energia Elétrica</h3>
-              <span class="badge-pill status-open">Versão 1.0.0 • Edição 2026</span>
+              <span class="badge-pill status-open">Versão 1.1.0 • Edição 2026</span>
             </div>
             <p class="card-subtitle">
               Aplicativo desktop multiplataforma para monitoramento diário do medidor residencial/comercial e cálculo tarifário preciso da Enel Distribuição Rio no município de Maricá (RJ).
@@ -754,7 +757,7 @@
               </div>
               <div class="credits-info-row">
                 <span>Versão do Aplicativo</span>
-                <strong>1.0.0 (Build Estável)</strong>
+                <strong>1.1.0 (Build Estável)</strong>
               </div>
               <div class="credits-info-row">
                 <span>Direitos Autorais</span>
@@ -809,14 +812,12 @@
 
             <div class="form-row two-cols">
               <div class="subcard">
-                <h4>🚀 Versão 1.0.0 — Lançamento Oficial (2026)</h4>
+                <h4>🚀 Versão 1.1.0 — Atualização (2026)</h4>
                 <ul class="credits-changelog-list">
-                  <li>Cadastro diário do valor exato do medidor com cálculo automático da diferença em kWh.</li>
-                  <li>Marcação do Dia do Corte do período para fechamento preciso no dia do vencimento.</li>
-                  <li>Preservação das tarifas e tributos por período para cálculo retroativo fiel.</li>
-                  <li>Grid diário completo do ciclo vigente para edição de dias não marcados ou digitados errado.</li>
-                  <li>Gráficos interativos de consumo em kWh (Diário, Semanal, Mensal e Anual).</li>
-                  <li>Armazenamento local em arquivo JSON com escrita atômica e backup integrado (sem banco de dados).</li>
+                  <li>Exclusão de períodos/ciclos e bloqueio automático contra criação de meses duplicados no mesmo ano.</li>
+                  <li>Edição direta da leitura base inicial (initial meter value) do período no card principal e no modal do ciclo.</li>
+                  <li>Aplicação imediata do Valor Mínimo (Custo de Disponibilidade) desde o início do período com atualização em tempo real ao ultrapassar a franquia.</li>
+                  <li>Lançamento inicial v1.0.0 com motor completo ANEEL / Enel RJ / ICMS RJ / COSIP Maricá e gráficos em kWh.</li>
                 </ul>
               </div>
 
@@ -871,10 +872,29 @@
           <input type="number" id="modalInitialMeter" step="0.01" min="0" placeholder="Deixe vazio para usar a 1ª leitura registrada" />
         </div>
         <div class="modal-actions">
+          <button type="button" id="btnDeletePeriodInModal" class="btn-danger-modal">🗑️ Apagar Este Período</button>
+          <div style="flex:1"></div>
           <button type="button" id="btnCancelPeriodModal" class="btn-light">Cancelar</button>
           <button type="submit" class="btn-forest">Salvar Período</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Confirmação para Apagar Período -->
+  <div id="deletePeriodModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>🗑️ Confirmar Exclusão do Período</h3>
+        <button id="btnCloseDeletePeriodModal" class="btn-close">✕</button>
+      </div>
+      <p style="font-size: 0.9rem; color: #334155; margin-bottom: 16px;">
+        Tem certeza que deseja apagar o período <strong id="deletePeriodTargetName">--</strong> e todas as leituras registradas nele? Esta ação não pode ser desfeita.
+      </p>
+      <div class="modal-actions">
+        <button type="button" id="btnCancelDeletePeriod" class="btn-light">Cancelar</button>
+        <button type="button" id="btnConfirmDeletePeriod" class="btn-danger-modal">Sim, Apagar Período</button>
+      </div>
     </div>
   </div>
 

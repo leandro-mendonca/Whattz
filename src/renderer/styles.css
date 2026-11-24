@@ -313,6 +313,49 @@ body {
   color: var(--forest-green);
 }
 
+.btn-danger-pill {
+  color: var(--burgundy-red);
+  border-color: rgba(128, 49, 76, 0.35);
+}
+
+.btn-danger-pill:hover {
+  background-color: rgba(128, 49, 76, 0.08);
+  border-color: var(--burgundy-red);
+  color: var(--burgundy-red);
+}
+
+.btn-inline-edit {
+  background: rgba(59, 110, 76, 0.12);
+  border: 1px solid rgba(59, 110, 76, 0.3);
+  color: var(--forest-green);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.btn-inline-edit:hover {
+  background: var(--forest-green);
+  color: #ffffff;
+}
+
+.btn-danger-modal {
+  background-color: var(--burgundy-red);
+  color: #ffffff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 5px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-danger-modal:hover {
+  background-color: #66243b;
+}
+
 .date-box {
   background: #ffffff;
   border: 1px solid var(--input-border);

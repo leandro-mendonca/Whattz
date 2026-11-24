@@ -150,7 +150,7 @@ Whattz/
 
 - **Autor / Desenvolvedor**: **Leandro Mendonça**
 - **Ano de Criação**: **2026**
-- **Versão**: `1.0.0`
+- **Versão**: `1.1.0`
 - **Licença**: MIT License
 - **Copyright**: © 2026 Leandro Mendonça. Todos os direitos reservados.
 

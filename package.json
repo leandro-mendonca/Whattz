@@ -1,9 +1,14 @@
 {
   "name": "whattz",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Aplicativo desktop para controle diário de consumo de energia elétrica e cálculo de fatura (Enel RJ / Maricá)",
   "main": "src/main/main.js",
-  "author": "Leandro Mendonça",
+  "homepage": "https://github.com/leandro-mendonca/Whattz",
+  "author": {
+    "name": "Leandro Mendonça",
+    "email": "leandromendonca1977@gmail.com",
+    "url": "https://github.com/leandro-mendonca"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -13,7 +18,7 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder -wl",
     "dist:linux": "electron-builder --linux AppImage deb",
-    "dist:win": "electron-builder --win nsis portable"
+    "dist:win": "electron-builder --win nsis zip"
   },
   "dependencies": {},
   "devDependencies": {
@@ -23,6 +28,7 @@
   "build": {
     "appId": "br.com.whattz.energia",
     "productName": "Whattz - Controle de Energia",
+    "copyright": "Copyright © 2026 Leandro Mendonça",
     "directories": {
       "output": "dist",
       "buildResources": "assets"
@@ -30,23 +36,36 @@
     "files": [
       "src/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE"
     ],
     "linux": {
       "icon": "assets/icon.png",
+      "executableName": "whattz",
+      "executableArgs": [
+        "--no-sandbox",
+        "--class=whattz"
+      ],
+      "desktop": {
+        "StartupWMClass": "whattz"
+      },
       "target": [
         "AppImage",
         "deb"
       ],
       "category": "Utility",
       "synopsis": "Controle diário de consumo de energia elétrica (Maricá / Enel RJ)",
-      "maintainer": "Leandro Mendonça <leandro@whattz.local>"
+      "vendor": "Leandro Mendonça",
+      "maintainer": "Leandro Mendonça <leandromendonca1977@gmail.com>"
     },
     "win": {
       "icon": "assets/icon.ico",
+      "publisherName": "Leandro Mendonça",
+      "legalTrademarks": "Copyright © 2026 Leandro Mendonça",
+      "signAndEditExecutable": false,
       "target": [
         "nsis",
-        "portable"
+        "zip"
       ]
     },
     "nsis": {

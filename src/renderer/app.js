@@ -20,8 +20,11 @@ const api = window.whattzAPI || {
   deleteReading: (periodId, date) => api._post('/api/deleteReading', { periodId, date }),
   updatePeriodMetadata: (periodId, metadata) => api._post('/api/updatePeriodMetadata', { periodId, metadata }),
   createNewPeriod: (payload) => api._post('/api/createNewPeriod', payload),
+  deletePeriod: (periodId) => api._post('/api/deletePeriod', { periodId }),
   updateTariffConfig: (periodId, config, applyAsGlobalDefault = true) =>
     api._post('/api/updateTariffConfig', { periodId, config, applyAsGlobalDefault }),
+  simulateInvoice: (consumoKwh, config, options) =>
+    api._post('/api/simulateInvoice', { consumoKwh, config, options }),
   loadSampleData: () => api._post('/api/loadSampleData'),
   exportBackup: async () => {
     const res = await api._post('/api/exportBackup');
@@ -146,6 +149,37 @@ function bindEvents() {
     nextPeriodBox.classList.toggle('hidden', !chkCutoff.checked);
   });
 
+  // Simulação em tempo real enquanto o usuário digita a leitura do medidor
+  const meterInputEl = document.getElementById('inputMeterValue');
+  const solarInputEl = document.getElementById('inputSolarInjected');
+  const triggerLivePreview = async () => {
+    if (!appState || !api.simulateInvoice) return;
+    const rawVal = meterInputEl.value;
+    if (rawVal === '' || Number.isNaN(Number(rawVal))) {
+      renderFiveKpisAndWidgets();
+      return;
+    }
+    const typedMeter = Number(rawVal);
+    const baseMeter = Number(appState.activeSummary.baseMeterValue) || 0;
+    const previewConsumoKwh = baseMeter > 0
+      ? Math.max(0, typedMeter - baseMeter)
+      : Number(appState.activeSummary.consumoAcumuladoKwh) || 0;
+
+    const cfg = appState.activePeriod.config || appState.globalConfig;
+    const aplicarMinimo = cfg.aplicarCustoDisponibilidadeNoFechamento !== false;
+    try {
+      const previewFatura = await api.simulateInvoice(previewConsumoKwh, cfg, {
+        aplicarMinimoDisponibilidade: aplicarMinimo,
+        energiaInjetadaExtraKwh: Number(solarInputEl.value || 0)
+      });
+      renderLiveInvoicePreview(previewConsumoKwh, typedMeter, previewFatura);
+    } catch (_) {
+      // Ignora erro de preview parcial
+    }
+  };
+  meterInputEl.addEventListener('input', triggerLivePreview);
+  solarInputEl.addEventListener('input', triggerLivePreview);
+
   document.getElementById('readingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -196,9 +230,30 @@ function bindEvents() {
   });
 
   document.getElementById('btnEditPeriodMeta').addEventListener('click', () => openPeriodModal('edit'));
+  document.getElementById('btnQuickEditInitialMeter').addEventListener('click', () => openPeriodModal('edit', true));
   document.getElementById('btnNewPeriod').addEventListener('click', () => openPeriodModal('create'));
   document.getElementById('btnClosePeriodModal').addEventListener('click', closePeriodModal);
   document.getElementById('btnCancelPeriodModal').addEventListener('click', closePeriodModal);
+
+  // Botões de apagar período
+  document.getElementById('btnDeletePeriod').addEventListener('click', () => openDeletePeriodModal());
+  document.getElementById('btnDeletePeriodInModal').addEventListener('click', () => {
+    closePeriodModal();
+    openDeletePeriodModal();
+  });
+  document.getElementById('btnCloseDeletePeriodModal').addEventListener('click', closeDeletePeriodModal);
+  document.getElementById('btnCancelDeletePeriod').addEventListener('click', closeDeletePeriodModal);
+  document.getElementById('btnConfirmDeletePeriod').addEventListener('click', async () => {
+    try {
+      const targetName = appState.activePeriod.name;
+      appState = await api.deletePeriod(appState.activePeriodId);
+      closeDeletePeriodModal();
+      renderAll();
+      showToast(`Período "${targetName}" apagado com sucesso!`);
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
 
   document.getElementById('periodMetaForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -316,10 +371,18 @@ function renderFiveKpisAndWidgets() {
   document.getElementById('kpiDaysElapsed').textContent = activeSummary.diasDecorridos;
 
   document.getElementById('kpiCurrentCostBRL').textContent = formatCurrency(fatura.valorTotalFatura);
-  document.getElementById('kpiEffectiveRate').textContent = `${formatCurrency(fatura.tarifasUnitarias.tarifaEfetivaComImpostos)}/kWh`;
+  if (fatura.aplicouCustoDisponibilidade) {
+    document.getElementById('kpiEffectiveRate').textContent =
+      `Mínimo (${fatura.minimoDisponibilidadeKwh} kWh) • Restam ${formatNumber(Math.max(0, fatura.minimoDisponibilidadeKwh - fatura.consumoRealKwh))} kWh`;
+  } else {
+    document.getElementById('kpiEffectiveRate').textContent =
+      `${formatCurrency(fatura.tarifasUnitarias.tarifaEfetivaComImpostos)}/kWh (${formatNumber(fatura.consumoFaturadoKwh)} kWh)`;
+  }
 
   document.getElementById('kpiProjectedCostBRL').textContent = formatCurrency(projetada.valorTotalFatura);
-  document.getElementById('kpiProjectedKwh').textContent = `${formatNumber(activeSummary.consumoProjetadoCorteKwh)} kWh`;
+  document.getElementById('kpiProjectedKwh').textContent = projetada.aplicouCustoDisponibilidade
+    ? `Mínimo ${projetada.minimoDisponibilidadeKwh} kWh (Medido: ${formatNumber(activeSummary.consumoProjetadoCorteKwh)} kWh)`
+    : `${formatNumber(activeSummary.consumoProjetadoCorteKwh)} kWh`;
 
   const totalImpostosECosip = fatura.tributosPorDentro.valorTotalTributos + fatura.cosipMarica.valor;
   document.getElementById('kpiTaxesAndCosipBRL').textContent = formatCurrency(totalImpostosECosip);
@@ -358,18 +421,19 @@ function renderFiveKpisAndWidgets() {
     heatmapContainer.appendChild(cell);
   });
 
-  // Mini barras comparativas dos últimos 7 dias registrados
+  // Mini barras comparativas dos últimos 7 dias registrados (mostra o valor do medidor em destaque e o consumo Δ kWh)
   const miniBarsContainer = document.getElementById('miniDailyBars');
   miniBarsContainer.innerHTML = '';
   const recentDays = (activeSummary.dailyBreakdown || []).slice(-7);
-  const maxRecent = Math.max(...recentDays.map(d => d.deltaKwh), 1);
+  const maxRecent = Math.max(...recentDays.map(d => Math.max(d.meterValue, d.deltaKwh)), 1);
 
   recentDays.forEach((d, idx) => {
-    const hPct = Math.max(8, Math.round((d.deltaKwh / maxRecent) * 48));
+    const hPct = Math.max(8, Math.round((Math.max(d.meterValue, d.deltaKwh) / maxRecent) * 44));
     const col = document.createElement('div');
     col.className = 'mini-bar-col';
+    col.title = `Data: ${formatDateBR(d.date)} | Leitura no Medidor: ${formatNumber(d.meterValue)} kWh | Consumo (diferença): +${formatNumber(d.deltaKwh)} kWh`;
     col.innerHTML = `
-      <span class="mini-bar-val">${d.deltaKwh.toFixed(1)}</span>
+      <span class="mini-bar-val"><strong>${d.meterValue.toFixed(1)}</strong> <small>(+${d.deltaKwh.toFixed(1)})</small></span>
       <div class="mini-bar-fill" style="height:${hPct}px; background:${idx % 2 === 0 ? '#3b6e4c' : '#8fb198'}"></div>
       <span class="mini-bar-lbl">${d.date.slice(8, 10)}/${d.date.slice(5, 7)}</span>
     `;
@@ -377,7 +441,13 @@ function renderFiveKpisAndWidgets() {
   });
 
   // Card Direito Inferior: Barras Horizontais da Composição da Fatura
-  document.getElementById('invoiceCalcModeBadge').textContent = activeSummary.isClosed ? 'Fechado no Corte' : 'Até o Momento';
+  if (activeSummary.isClosed) {
+    document.getElementById('invoiceCalcModeBadge').textContent = 'Fechado no Corte';
+  } else if (fatura.aplicouCustoDisponibilidade) {
+    document.getElementById('invoiceCalcModeBadge').textContent = `Taxa Mínima (${fatura.minimoDisponibilidadeKwh} kWh)`;
+  } else {
+    document.getElementById('invoiceCalcModeBadge').textContent = `Consumo Real (${formatNumber(fatura.consumoFaturadoKwh)} kWh)`;
+  }
 
   const trib = fatura.tributosPorDentro;
   const valTusd = fatura.energiaBase.custoTusd;
@@ -412,14 +482,70 @@ function renderFiveKpisAndWidgets() {
   document.getElementById('hbarExtras').style.width = pct(valExtras);
   document.getElementById('bdExtrasValue').textContent = formatCurrency(valExtras);
 
-  document.getElementById('bdTaxDetail').textContent =
-    `Alíquota por dentro: ${trib.somaAliquotasPercent.toFixed(2)}% (Divisor ${trib.divisorPorDentro.toFixed(4)})`;
+  document.getElementById('bdTaxDetail').textContent = fatura.aplicouCustoDisponibilidade
+    ? `Faturado pelo Mínimo (${fatura.minimoDisponibilidadeKwh} kWh) | Medido: ${formatNumber(fatura.consumoRealKwh)} kWh`
+    : `Consumo Faturado: ${formatNumber(fatura.consumoFaturadoKwh)} kWh | Alíquota: ${trib.somaAliquotasPercent.toFixed(2)}%`;
   document.getElementById('bdTotalValue').textContent = formatCurrency(fatura.valorTotalFatura);
 
   const dateInput = document.getElementById('inputReadingDate');
   if (!dateInput.value) {
     setDefaultReadingFormValues();
   }
+}
+
+function renderLiveInvoicePreview(previewConsumoKwh, typedMeter, fatura) {
+  document.getElementById('kpiAccumulatedKwh').textContent = formatNumber(previewConsumoKwh);
+  document.getElementById('kpiLatestMeter').textContent = formatNumber(typedMeter);
+  document.getElementById('kpiCurrentCostBRL').textContent = formatCurrency(fatura.valorTotalFatura);
+
+  if (fatura.aplicouCustoDisponibilidade) {
+    document.getElementById('kpiEffectiveRate').textContent =
+      `Mínimo (${fatura.minimoDisponibilidadeKwh} kWh) • Restam ${formatNumber(Math.max(0, fatura.minimoDisponibilidadeKwh - fatura.consumoRealKwh))} kWh`;
+  } else {
+    document.getElementById('kpiEffectiveRate').textContent =
+      `${formatCurrency(fatura.tarifasUnitarias.tarifaEfetivaComImpostos)}/kWh (${formatNumber(fatura.consumoFaturadoKwh)} kWh)`;
+  }
+
+  const totalImpostosECosip = fatura.tributosPorDentro.valorTotalTributos + fatura.cosipMarica.valor;
+  document.getElementById('kpiTaxesAndCosipBRL').textContent = formatCurrency(totalImpostosECosip);
+  document.getElementById('kpiIcmsBandTag').textContent =
+    `ICMS RJ ${fatura.tributosPorDentro.totalEstadualPercent}% | COSIP ${formatCurrency(fatura.cosipMarica.valor)}`;
+
+  const trib = fatura.tributosPorDentro;
+  const valTusd = fatura.energiaBase.custoTusd;
+  const valTe = fatura.energiaBase.custoTe;
+  const valIcms = trib.valorIcms + trib.valorFecp;
+  const valFed = trib.valorPis + trib.valorCofins;
+  const valCosip = fatura.cosipMarica.valor;
+  const valFlag = fatura.energiaBase.custoBandeira;
+  const valExtras = fatura.eventuais.totalEventuais;
+
+  const maxPart = Math.max(valTusd, valTe, valIcms, valFed, valCosip, valFlag, valExtras, 1);
+  const pct = (v) => `${Math.min(100, Math.max(3, Math.round((v / maxPart) * 100)))}%`;
+
+  document.getElementById('hbarTusd').style.width = pct(valTusd);
+  document.getElementById('bdTusdValue').textContent = formatCurrency(valTusd);
+  document.getElementById('hbarTe').style.width = pct(valTe);
+  document.getElementById('bdTeValue').textContent = formatCurrency(valTe);
+  document.getElementById('hbarIcms').style.width = pct(valIcms);
+  document.getElementById('bdIcmsTotalValue').textContent = formatCurrency(valIcms);
+  document.getElementById('hbarFed').style.width = pct(valFed);
+  document.getElementById('bdFedTotalValue').textContent = formatCurrency(valFed);
+  document.getElementById('hbarCosip').style.width = pct(valCosip);
+  document.getElementById('bdCosipValue').textContent = formatCurrency(valCosip);
+  document.getElementById('hbarFlag').style.width = pct(valFlag);
+  document.getElementById('bdFlagValue').textContent = formatCurrency(valFlag);
+  document.getElementById('hbarExtras').style.width = pct(valExtras);
+  document.getElementById('bdExtrasValue').textContent = formatCurrency(valExtras);
+
+  document.getElementById('invoiceCalcModeBadge').textContent = fatura.aplicouCustoDisponibilidade
+    ? `Taxa Mínima (${fatura.minimoDisponibilidadeKwh} kWh)`
+    : `Consumo Real (${formatNumber(fatura.consumoFaturadoKwh)} kWh)`;
+
+  document.getElementById('bdTaxDetail').textContent = fatura.aplicouCustoDisponibilidade
+    ? `Faturado pelo Mínimo (${fatura.minimoDisponibilidadeKwh} kWh) | Medido: ${formatNumber(fatura.consumoRealKwh)} kWh`
+    : `Consumo Faturado: ${formatNumber(fatura.consumoFaturadoKwh)} kWh | Alíquota: ${trib.somaAliquotasPercent.toFixed(2)}%`;
+  document.getElementById('bdTotalValue').textContent = formatCurrency(fatura.valorTotalFatura);
 }
 
 function loadDayIntoForm(dateStr) {
@@ -554,9 +680,9 @@ function renderChartsView() {
     const tr = document.createElement('tr');
     let extra = '';
     if (activeChartMode === 'daily') {
-      extra = `Medidor: ${formatNumber(item.meterValue)} kWh | Custo est.: ${formatCurrency(item.costBRL)} ${item.isCutoff ? '• ✂️ Dia do Corte' : ''}`;
+      extra = `Leitura no Medidor: ${formatNumber(item.meterValue)} kWh | Consumo do dia (diferença): +${formatNumber(item.kwh)} kWh | Custo est.: ${formatCurrency(item.costBRL)} ${item.isCutoff ? '• ✂️ Dia do Corte' : ''}`;
     } else if (activeChartMode === 'weekly') {
-      extra = `${item.daysCount} leituras na semana`;
+      extra = `${item.daysCount} leitura(s) registrada(s) na semana${item.lastMeterValue !== null && item.lastMeterValue !== undefined ? ` | Última leitura no medidor: ${formatNumber(item.lastMeterValue)} kWh` : ''}`;
     } else if (activeChartMode === 'monthly') {
       extra = `Fatura calculada: ${formatCurrency(item.totalBRL)} (${item.isClosed ? 'Fechado' : 'Em aberto'})`;
     } else if (activeChartMode === 'annual') {
@@ -714,22 +840,25 @@ function collectTariffConfigFromForm() {
   };
 }
 
-function openPeriodModal(mode) {
+function openPeriodModal(mode, focusInitialMeter = false) {
   if (!appState) return;
   const modal = document.getElementById('periodModal');
   document.getElementById('modalPeriodMode').value = mode;
+  const delBtn = document.getElementById('btnDeletePeriodInModal');
 
   if (mode === 'edit') {
     const p = appState.activePeriod;
-    document.getElementById('periodModalTitle').textContent = `Editar Ciclo: ${p.name}`;
+    if (delBtn) delBtn.classList.remove('hidden');
+    document.getElementById('periodModalTitle').textContent = `Editar Ciclo & Leitura Inicial: ${p.name}`;
     document.getElementById('modalPeriodName').value = p.name;
     document.getElementById('modalStartDate').value = p.startDate;
     document.getElementById('modalCutoffDate').value = p.expectedCutoffDate;
     document.getElementById('modalDueDate').value = p.dueDate;
     document.getElementById('modalInitialMeter').value = p.initialMeterValue !== null && p.initialMeterValue !== undefined
       ? p.initialMeterValue
-      : '';
+      : (appState.activeSummary.baseMeterValue || '');
   } else {
+    if (delBtn) delBtn.classList.add('hidden');
     document.getElementById('periodModalTitle').textContent = 'Criar Novo Período / Ciclo de Faturamento';
     document.getElementById('modalPeriodName').value = '';
     document.getElementById('modalStartDate').value = '';
@@ -739,10 +868,29 @@ function openPeriodModal(mode) {
   }
 
   modal.classList.remove('hidden');
+  if (focusInitialMeter) {
+    setTimeout(() => {
+      const input = document.getElementById('modalInitialMeter');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 50);
+  }
 }
 
 function closePeriodModal() {
   document.getElementById('periodModal').classList.add('hidden');
+}
+
+function openDeletePeriodModal() {
+  if (!appState) return;
+  document.getElementById('deletePeriodTargetName').textContent = appState.activePeriod.name;
+  document.getElementById('deletePeriodModal').classList.remove('hidden');
+}
+
+function closeDeletePeriodModal() {
+  document.getElementById('deletePeriodModal').classList.add('hidden');
 }
 
 function formatNumber(val) {

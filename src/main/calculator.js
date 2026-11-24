@@ -241,7 +241,10 @@ function calculateInvoice(consumoMedidoKwh, config = {}, options = {}) {
     ? Boolean(options.aplicarMinimoDisponibilidade)
     : false;
 
-  let consumoFaturadoKwh = aplicarMinimo && consumoRealKwh > 0
+  // Quando aplicarMinimo está ativo, o consumo faturado começa no mínimo de disponibilidade
+  // (30/50/100 kWh) desde o início do período (mesmo com 0 kWh medidos) e cresce em tempo real
+  // assim que o consumo acumulado ultrapassa o limite mínimo.
+  let consumoFaturadoKwh = aplicarMinimo
     ? Math.max(consumoRealKwh, minimoDisponibilidadeKwh)
     : consumoRealKwh;
 
@@ -310,7 +313,7 @@ function calculateInvoice(consumoMedidoKwh, config = {}, options = {}) {
 
   // 5. COSIP Maricá
   const cosipInfo = resolveCosipMarica(consumoFaturadoKwh, cfg);
-  const valorCosip = consumoRealKwh === 0 && !aplicarMinimo ? 0 : cosipInfo.valor;
+  const valorCosip = (consumoFaturadoKwh === 0 && !aplicarMinimo) ? 0 : cosipInfo.valor;
 
   // 6. Parâmetros Específicos e Eventuais
   // 6.1 Alta Tensão (Grupo A)
@@ -515,16 +518,19 @@ function calculatePeriodSummary(period) {
     ? consumoAcumuladoKwh
     : Math.max(consumoAcumuladoKwh, mediaDiariaKwh * diasTotaisCiclo);
 
-  // Cálculo da fatura até o momento (sem forçar taxa mínima se ainda estiver em andamento, a menos que fechado no corte)
+  // Cálculo da fatura em tempo real: aplica o valor mínimo (Custo de Disponibilidade) desde o início do período
+  // e atualiza em tempo real conforme as leituras do medidor ultrapassam a franquia mínima.
   const isClosedAtCutoff = Boolean(cutoffReading) || Boolean(period.isClosed);
+  const aplicarMinimoTempoReal = cfg.aplicarCustoDisponibilidadeNoFechamento !== false;
+
   const faturaAtual = calculateInvoice(consumoAcumuladoKwh, cfg, {
-    aplicarMinimoDisponibilidade: isClosedAtCutoff && cfg.aplicarCustoDisponibilidadeNoFechamento,
+    aplicarMinimoDisponibilidade: aplicarMinimoTempoReal,
     energiaInjetadaExtraKwh: totalSolarInjectedReadings
   });
 
   // Cálculo da fatura projetada no dia do corte/vencimento
   const faturaProjetada = calculateInvoice(consumoProjetadoCorteKwh, cfg, {
-    aplicarMinimoDisponibilidade: cfg.aplicarCustoDisponibilidadeNoFechamento,
+    aplicarMinimoDisponibilidade: aplicarMinimoTempoReal,
     energiaInjetadaExtraKwh: totalSolarInjectedReadings
   });
 
