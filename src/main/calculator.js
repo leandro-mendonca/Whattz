@@ -13,16 +13,16 @@ const DEFAULT_TARIFF_CONFIG = {
   distribuidora: 'Enel Distribuição Rio',
   classe: 'Residencial B1', // Residencial B1, Residencial Baixa Renda, Comercial, Industrial, Rural
   modalidade: 'Convencional', // Convencional, Tarifa Branca, Grupo A (Alta Tensão)
-  tipoLigacao: 'Bifásico', // Monofásico (30 kWh), Bifásico (50 kWh), Trifásico (100 kWh)
+  tipoLigacao: 'Trifásico', // Monofásico (30 kWh), Bifásico (50 kWh), Trifásico (100 kWh)
   aplicarCustoDisponibilidadeNoFechamento: true,
 
   // Calendário da conta
-  diaCortePadrao: 15,
-  diaVencimentoPadrao: 25,
+  diaCortePadrao: 6,
+  diaVencimentoPadrao: 15,
 
-  // 1. Consumo e Tarifas Base (R$/kWh - ANEEL / Enel RJ)
-  te: 0.34582,   // Tarifa de Energia (R$/kWh sem impostos)
-  tusd: 0.52841, // Tarifa de Uso do Sistema de Distribuição (R$/kWh sem impostos)
+  // 1. Consumo e Tarifas Base (R$/kWh - ANEEL / Enel RJ homologadas na fatura real)
+  te: 0.32919,   // Tarifa de Energia (R$/kWh sem impostos -> R$ 0,42140 c/ tributos)
+  tusd: 0.73174, // Tarifa de Uso do Sistema de Distribuição (R$/kWh sem impostos -> R$ 0,93670 c/ tributos)
 
   // Tarifa Branca (multiplicadores ou valores específicos caso modalidade === 'Tarifa Branca')
   tarifaBrancaPonta: 1.48210,
@@ -39,8 +39,8 @@ const DEFAULT_TARIFF_CONFIG = {
   },
 
   // 3. Tributos Federais e Estaduais ("Cálculo Por Dentro" - em %)
-  pisPercent: 1.08,    // % PIS
-  cofinsPercent: 4.98, // % COFINS
+  pisPercent: 0.68,    // % PIS (totalizando 3,88% PIS+COFINS = R$ 5,27 sobre R$ 135,81)
+  cofinsPercent: 3.20, // % COFINS
   icmsModo: 'escalonado_rj', // 'escalonado_rj' (automático conforme faixa RJ) ou 'manual'
   icmsManualPercent: 18.0,   // usado quando icmsModo === 'manual'
   fecpManualPercent: 0.0,    // usado quando icmsModo === 'manual'
@@ -59,15 +59,15 @@ const DEFAULT_TARIFF_CONFIG = {
 
   // 4. Contribuição Municipal (COSIP - Maricá - Lei Municipal nº 2.039-G/2002)
   cosipModo: 'tabela_marica', // 'tabela_marica' ou 'fixo'
-  cosipValorFixo: 28.50,
+  cosipValorFixo: 17.50,
   cosipIsentoBaixaRenda: true,
   tabelaCosipMarica: [
     { ateKwh: 50, valor: 0.00, descricao: 'Até 50 kWh (Isento)' },
-    { ateKwh: 100, valor: 9.80, descricao: 'De 51 a 100 kWh' },
-    { ateKwh: 150, valor: 16.40, descricao: 'De 101 a 150 kWh' },
-    { ateKwh: 200, valor: 23.90, descricao: 'De 151 a 200 kWh' },
-    { ateKwh: 300, valor: 32.50, descricao: 'De 201 a 300 kWh' },
-    { ateKwh: 500, valor: 46.80, descricao: 'De 301 a 500 kWh' },
+    { ateKwh: 100, valor: 17.50, descricao: 'De 51 a 100 kWh' },
+    { ateKwh: 150, valor: 21.80, descricao: 'De 101 a 150 kWh' },
+    { ateKwh: 200, valor: 27.90, descricao: 'De 151 a 200 kWh' },
+    { ateKwh: 300, valor: 35.50, descricao: 'De 201 a 300 kWh' },
+    { ateKwh: 500, valor: 48.80, descricao: 'De 301 a 500 kWh' },
     { ateKwh: 999999, valor: 64.20, descricao: 'Acima de 500 kWh' }
   ],
 

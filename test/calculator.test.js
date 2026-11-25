@@ -80,25 +80,25 @@ console.log('Iniciando testes do motor de cálculo Whattz (Maricá / Enel RJ)...
   });
   const updatedPeriodId = storage.getFullState().activePeriodId;
 
-  // No início do período (0 kWh medidos), já deve aplicar a franquia mínima (50 kWh para Bifásico)
+  // No início do período (0 kWh medidos), já deve aplicar a franquia mínima (100 kWh para Trifásico padrão)
   assert.strictEqual(state0.activeSummary.consumoAcumuladoKwh, 0);
-  assert.strictEqual(state0.activeSummary.faturaAtual.consumoFaturadoKwh, 50, 'No começo do período deve aplicar a franquia mínima de 50 kWh (Bifásico)');
+  assert.strictEqual(state0.activeSummary.faturaAtual.consumoFaturadoKwh, 100, 'No começo do período deve aplicar a franquia mínima de 100 kWh (Trifásico)');
   assert.strictEqual(state0.activeSummary.faturaAtual.aplicouCustoDisponibilidade, true);
   const valorMinimoInicial = state0.activeSummary.faturaAtual.valorTotalFatura;
-  assert.ok(valorMinimoInicial > 0, 'O valor da fatura no começo do período já deve partir do valor mínimo');
+  assert.strictEqual(valorMinimoInicial, 153.31, 'O valor mínimo inicial com as tarifas reais da Enel RJ deve ser exatamente R$ 153,31');
 
   storage.upsertReading(updatedPeriodId, { date: '2026-11-01', meterValue: 1010, isCutoff: false });
   storage.upsertReading(updatedPeriodId, { date: '2026-11-02', meterValue: 1025, isCutoff: false });
   const stateAt40 = storage.upsertReading(updatedPeriodId, { date: '2026-11-03', meterValue: 1040, isCutoff: false });
 
   assert.strictEqual(stateAt40.activeSummary.consumoAcumuladoKwh, 40, 'Diferença entre 1040 e base 1000 deve ser 40 kWh');
-  assert.strictEqual(stateAt40.activeSummary.faturaAtual.consumoFaturadoKwh, 50, 'Com 40 kWh medidos (< 50 kWh), ainda mantém o mínimo de 50 kWh');
+  assert.strictEqual(stateAt40.activeSummary.faturaAtual.consumoFaturadoKwh, 100, 'Com 40 kWh medidos (< 100 kWh), ainda mantém o mínimo de 100 kWh');
   assert.strictEqual(stateAt40.activeSummary.faturaAtual.valorTotalFatura, valorMinimoInicial);
 
-  // Ao ultrapassar 50 kWh (ex: medidor em 1065 = 65 kWh), atualiza o valor da fatura em tempo real
-  const stateAfter = storage.upsertReading(updatedPeriodId, { date: '2026-11-04', meterValue: 1065, isCutoff: true });
-  assert.strictEqual(stateAfter.activeSummary.consumoAcumuladoKwh, 65);
-  assert.strictEqual(stateAfter.activeSummary.faturaAtual.consumoFaturadoKwh, 65, 'Ao passar de 50 kWh, o consumo faturado passa a ser o consumo real (65 kWh)');
+  // Ao ultrapassar 100 kWh (ex: medidor em 1120 = 120 kWh), atualiza o valor da fatura em tempo real
+  const stateAfter = storage.upsertReading(updatedPeriodId, { date: '2026-11-04', meterValue: 1120, isCutoff: true });
+  assert.strictEqual(stateAfter.activeSummary.consumoAcumuladoKwh, 120);
+  assert.strictEqual(stateAfter.activeSummary.faturaAtual.consumoFaturadoKwh, 120, 'Ao passar de 100 kWh, o consumo faturado passa a ser o consumo real (120 kWh)');
   assert.strictEqual(stateAfter.activeSummary.faturaAtual.aplicouCustoDisponibilidade, false);
   assert.ok(stateAfter.activeSummary.faturaAtual.valorTotalFatura > valorMinimoInicial, 'O valor da fatura deve subir assim que ultrapassar o mínimo');
   assert.strictEqual(stateAfter.activeSummary.isClosed, true, 'Marcar dia do corte deve fechar o cálculo oficial no corte');
@@ -110,7 +110,7 @@ console.log('Iniciando testes do motor de cálculo Whattz (Maricá / Enel RJ)...
     initialMeterValue: 1005
   });
   assert.strictEqual(stateEditedBase.activeSummary.baseMeterValue, 1005, 'O valor base inicial do período deve ser editável');
-  assert.strictEqual(stateEditedBase.activeSummary.consumoAcumuladoKwh, 60, 'Novo consumo acumulado entre 1065 e nova base 1005 deve ser 60 kWh');
+  assert.strictEqual(stateEditedBase.activeSummary.consumoAcumuladoKwh, 115, 'Novo consumo acumulado entre 1120 e nova base 1005 deve ser 115 kWh');
 
   // 5. Teste de bloqueio de mês/ano duplicado e exclusão de período
   assert.throws(() => {
